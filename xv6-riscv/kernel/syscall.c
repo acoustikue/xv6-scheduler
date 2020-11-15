@@ -142,6 +142,9 @@ extern int             is_q0(struct proc*);
 extern struct proc*    enqueue(_queue*, struct proc*);
 extern struct proc*    dequeue(_queue*);
 extern struct proc*    remove(_queue*, struct proc*);
+extern void            show_queue_status();
+extern int             record_tick(struct proc*, int); 
+// extern int             record_tick2(struct proc*, int, int); 
 
 #endif
 
@@ -162,6 +165,7 @@ syscall(void)
 #ifdef SUKJOON
   acquire(&p->lock);
   if (is_q1(p)) { remove(&q1, p); enqueue(&q2, p); }
+  if (is_q0(p)) { remove(&q0, p); enqueue(&q2, p); }
   release(&p->lock);
 #endif
 }

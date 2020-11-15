@@ -159,13 +159,27 @@ kerneltrap()
   w_sstatus(sstatus);
 }
 
+// Author: SukJoon Oh, 2018142216, acoustikue@yonsei.ac.kr
+// Global variables.
+#ifdef SUKJOON
+extern struct proc proc[NPROC];
+extern int             record_tick2(struct proc*, uint); 
+// Both are from proc.c
+#endif
+
 void
 clockintr()
 {
   acquire(&tickslock);
   ticks++;
+#ifdef SUKJOON
+  // Rounds all valid processes in order to count the ticks.
+  for(struct proc* p = proc; p < &proc[NPROC]; p++)
+    if (p != 0 && p->p_id != -1) record_tick2(p, ticks);
+#endif
   wakeup(&ticks);
   release(&tickslock);
+
 }
 
 // check if it's an external interrupt or software interrupt,

@@ -111,9 +111,11 @@ struct proc {
 #define SUKJOON
 #ifdef SUKJOON
   int           p_id;           // This p_id holds which queue it is located in.
-  int           p_ticks;        // ticks.
+  uint          p_ticks[3];     // ticks.
+  uint          p_stp;          // tick calculation starting point
   struct proc*  p_prev;         // Maybe unnecessary?
   struct proc*  p_next;         // Move to the next element.
+
 #endif
 };
 
@@ -140,6 +142,8 @@ int             is_q0(struct proc*);  // Is the element in q0?
 int             color(struct proc*, int); // Mark the possession.
 int             uncolor(struct proc*);    // Delete the mark.
 int             ground(struct proc*);     // Make both arms zeros.
+int             record_tick(struct proc*, int); 
+int             record_tick2(struct proc*, uint);
 
 //
 // Queue controls
@@ -149,10 +153,13 @@ struct proc*    get_head(_queue*);     // returns __queue::q_head.
 struct proc*    get_tail(_queue*);     // returns __queue::q_tail.
 int             get_cnt(_queue*);      // returns __queue::q_cnt.
 
+struct proc*    run_this(struct proc*);
+
 struct proc*    enqueue(_queue*, struct proc*);
 struct proc*    dequeue(_queue*);
 struct proc*    remove(_queue*, struct proc*);
 
+void            show_queue_status();
 //
 // New scheduler
 // This will substitute the conventional scheduler().

@@ -35,27 +35,28 @@ _queue q1;
 _queue q0;
 
 extern uint ticks;
-
-// acquire(&tickslock);
-// ticks++;
-// wakeup(&ticks);
-// release(&tickslock);
+// This is for the access of global variable.
+// ticks is declared in trap.c
 
 #define Q2    2
 #define Q1    1
 #define Q0    0
 #define UD    -1
 
-#define __PAUSE__   panic("(debug) PAUSE");
+#define __PAUSE__                       panic("(debug) PAUSE");
 
 #define __CONTEXT_SWITCH__(C, P) \
-  do { P->state = RUNNING; C->proc = P; swtch(&C->context, &P->context); C->proc = 0; } while(0)
-#define __DE_MOVE___(P, SRC, DST)   do { dequeue(SRC); enqueue(DST, P); } while(0)
-#define __RE_MOVE___(P, SRC, DST)   do { enqueue(DST, remove(SRC, P)); } while(0)
+                                        do { P->state = RUNNING; C->proc = P; swtch(&C->context, &P->context); C->proc = 0; } while(0)
+#define __DE_MOVE___(P, SRC, DST)       do { dequeue(SRC); enqueue(DST, P); } while(0)
+#define __RE_MOVE___(P, SRC, DST)       do { enqueue(DST, remove(SRC, P)); } while(0)
 
-
+//
 // Make it all zeros.
-void init_queue(_queue* q, int id) { q->q_id = id; q->q_head = 0; q->q_tail = 0; q->q_cnt = 0; };
+void init_queue(_queue* q, int id) { 
+  q->q_id = id; 
+  q->q_head = q->q_tail = 0; 
+  q->q_cnt = 0;
+};
 
 // Console debug purpose.
 void show_queue_status() {
@@ -66,6 +67,8 @@ void show_queue_status() {
 
 
 // Process controls
+// Following functions are for controlling and accessing members of struct proc.
+// All functions play simple.
 int is_q2(struct proc* p) { return p->p_id == Q2; }
 int is_q1(struct proc* p) { return p->p_id == Q1; }
 int is_q0(struct proc* p) { return p->p_id == Q0; }
@@ -74,35 +77,68 @@ int color(struct proc* p, int id) {  p->p_id = id; return id; }
 int uncolor(struct proc* p) {  p->p_id = UD; return UD; }
 int ground(struct proc* p) { p->p_next = p->p_prev = 0; return 0;}
 
+int record_tick(struct proc* p, int qid) { p->p_ticks[qid]++; return p->p_ticks[qid]; }
+int record_tick2(struct proc* p, uint gtick) { 
+  p->p_ticks[p->p_id] += (gtick - p->p_stp);
+  p->p_stp = gtick;
+  return p->p_ticks[p->p_id]; 
+}
+// record_tick() is deprecated. Do not use it.
+
 
 // Queue controls
+// 
 int is_empty(_queue* q) { return (q->q_cnt == 0); } 
 
 struct proc* get_head(_queue* q) { return q->q_head; }
 struct proc* get_tail(_queue* q) { return q->q_tail; }
 int get_cnt(_queue* q) { return q->q_cnt; }
 
+// 
+// This function is responsible in deciding the next process to run.
+struct proc* run_this(struct proc* p) {
+  struct proc* rp;
+  
+  // If the process is fixed to 0, the kernaltrap will be on. 
+  // Thus, it should be prevented.
+  if (p == 0) return get_head(&q2);
+  acquire(&p->lock);
+
+  if (p->p_next == 0) { // case when at the end of loop
+    if (!is_empty(&q2)) rp = get_head(&q2);
+    else rp = get_head(&q1);
+    // If it is the end of the queue, 
+    // the next process to run is always the head of the queue.
+    // This holds true only when q2 is not empty.
+  } else {
+    if (!is_empty(&q2)) { // Case when q2 is empty, which is q1's turn.
+      if (is_q1(p)) rp = get_head(&q2);
+      else rp = p->p_next;
+    } else rp = p->p_next;
+  }
+  release(&p->lock);
+  return rp;
+}
+
+// Simple enqueueing function.
 struct proc* enqueue(_queue* q, struct proc* p) {
   color(p, q->q_id); // color it first
   
   if (is_empty(q)) { ground(p); q->q_head = q->q_tail = p; }
   else {
     q->q_tail->p_next = p;
-
     p->p_prev = q->q_tail;
     p->p_next = 0;
-
     q->q_tail = p;
   }
 
-  q->q_cnt++;
-  
+  q->q_cnt++;  
   return p;
 }
 
-struct proc* dequeue(_queue* q) { // printf("dequeue\n");
+// Simple dequeueing function.
+struct proc* dequeue(_queue* q) {
   struct proc* p = q->q_head;
-
   if (is_empty(q)) return 0;
 
   // When single element exists
@@ -111,21 +147,22 @@ struct proc* dequeue(_queue* q) { // printf("dequeue\n");
     q->q_head = p->p_next;
     q->q_head->p_prev = 0;
   }
-
   uncolor(p); // remove color
   ground(p);
 
   q->q_cnt--;
-
   return p;
 }
 
+// This function removes a specific element from queue.
+// It is necessary operation, since a process located in the middle of the queue
+// might be freed early. It is not desirable to hold a dead process information
+// in q1 or q2, so it should be removed.
 struct proc* remove(_queue* q, struct proc* tp) { 
   struct proc* np = q->q_head;
   // search
   if (is_empty(q)) { return 0; } // case when empty
   while (np != tp && np != 0) np = np->p_next; // search for target
-  
   if (np == 0) { return 0; } // not found
 
   if (q->q_cnt == 1) { q->q_head = q->q_tail = 0; }
@@ -136,48 +173,85 @@ struct proc* remove(_queue* q, struct proc* tp) {
     if (np == q->q_tail) q->q_tail = np->p_prev; 
   }
 
+  // Delete the information needed for queueing.
   uncolor(np);
   ground(np);
 
   q->q_cnt--;
-
   return np;
 }
 
-
-
 //
 // New scheduler
+
+// This will substitute the conventional scheduler().
+// To make overall code structure unchanged, this function will be called in scheduler().
+// It is found in the original scheduler(). Please check the function.
 void mlfq_like() {
   struct proc *p;
-  struct cpu *c = mycpu();
-  
+  struct proc* rt = get_head(&q2); // run this
+  struct proc* pb = get_head(&q1); // priority boost role (modified)
+  struct cpu *c = mycpu(); // cpu information
   c->proc = 0;
 
   for(;;){
-    
     intr_on(); // Avoid deadlock by ensuring that devices can interrupt.
 
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if (  p == get_head(&q2)   ) {
-        if(p->state == RUNNABLE) { __CONTEXT_SWITCH__(c, p); __DE_MOVE___(p, &q2, &q1); }
-        else if (p->state == SLEEPING) { __DE_MOVE___(p, &q2, &q0); }
-        else if (p->state == UNUSED || p->state == ZOMBIE) { dequeue(&q2); } 
-      }
-      else if (  p == get_head(&q1)   ) {
-        if(p->state == RUNNABLE) { __CONTEXT_SWITCH__(c, p); }
-        else if (p->state == SLEEPING) { __DE_MOVE___(p, &q1, &q0); }
-        else if (p->state == UNUSED || p->state == ZOMBIE) { dequeue(&q1); }
-      }
-      release(&p->lock);
+    // If the system is on a boot at first, the queue will hold zero pointer. 
+    // Kerneltrap initiates when accessing an unknown process, 
+    // thus rt should never be zero.
+    if (rt != 0) {
+      acquire(&rt->lock);
+
+      for(p = proc; p < &proc[NPROC]; p++) {
+        // This is for searching.
+
+        // First case: priority boosting
+        // This assignment does not actually implement priority boosting, but
+        // a different and similar way of preventing starvation.
+        if (pb != 0 && p->p_next == 0 && is_q2(p)) {
+          // This is the case when rt(run this pointer) is at the end of the q2.
+          // It should run the process located in q1, but not changing its position.
+          if (pb->state == RUNNABLE) {
+            __CONTEXT_SWITCH__(c, pb); // defined in macro.
+            pb = pb->p_next;
+            if (pb == 0) pb = get_head(&q1);
+          }
+          else if (p->state == SLEEPING || p->state == ZOMBIE) { __RE_MOVE___(p, &q1, &q0); }
+          else if (p->state == UNUSED) { remove(&q1, p); }  
+        }
+        // For this operation, pb pointer exists for always pointing at the process ready to 
+        // run at the next priority boost.
+
+        else if (  p == rt && is_q2(p) ) { // case when it is time for q2 to run.
+          if(p->state == RUNNABLE) { __CONTEXT_SWITCH__(c, p); }
+          else if (p->state == SLEEPING || p->state == ZOMBIE) { __RE_MOVE___(p, &q2, &q0); }
+          else if (p->state == UNUSED) { remove(&q2, p); }
+          break;
+        }
+        else if (  p == rt && is_q1(p) ) { // case when it is time for q2 to run.
+          if(p->state == RUNNABLE) { __CONTEXT_SWITCH__(c, p); }
+          else if (p->state == SLEEPING || p->state == ZOMBIE) { __RE_MOVE___(p, &q1, &q0); }
+          else if (p->state == UNUSED) { remove(&q1, p); }  
+          break;
+        }
+      }  
+      release(&rt->lock);
     }
+    // run_this() function is the key point of this function. 
+    // This is the one that actually decides what to run next.
+    rt = run_this(rt);    
   }
 }
-
-
+// Nodes:
+// Modified functions are - 
+//  procinit(), allocproc(), yield(), wakeup(), 
+//  wakeup1(), syscall(), clockintr() and freeproc().
+// Every modification was wrapped with #ifdef SUKJOON -#endif, thus 
+// please search using an editor.
 
 #endif
+
 
 // initialize the proc table at boot time.
 void
@@ -274,6 +348,8 @@ found:
 
 #ifdef SUKJOON
   enqueue(&q2, p);
+  p->p_ticks[Q2] = p->p_ticks[Q1] = p->p_ticks[Q0] = 0;
+  p->p_stp = ticks;
 #endif
 
   // Allocate a trapframe page.
@@ -305,9 +381,26 @@ found:
 static void
 freeproc(struct proc *p)
 {
+#ifdef SUKJOON
+#define RATIO(X) 100 * X / (p->p_ticks[Q2] + p->p_ticks[Q1] + p->p_ticks[Q0])
+  
+  printf("%s (pid=%d): Q2(%d%%), Q1(%d%%), Q0(%d%%)\n",
+         p->name, p->pid, 
+         RATIO(p->p_ticks[Q2]), RATIO(p->p_ticks[Q1]), RATIO(p->p_ticks[Q0]));
+
+  p->p_ticks[Q2] = p->p_ticks[Q1] = p->p_ticks[Q0] = 0;
+  p->p_stp = 0;
+
+  if (p->state == ZOMBIE) {
+    if (is_q2(p)) remove(&q2, p);
+    else if (is_q1(p)) remove(&q1, p);
+    else if (is_q0(p)) remove(&q0, p);
+  }
+#else
   // Print out the runtime stats of queue occupancy.
   printf("%s (pid=%d): Q2(%d%%), Q1(%d%%), Q0(%d%%)\n",
          p->name, p->pid, 0, 0, 0);
+#endif
 
   if(p->trapframe)
     kfree((void*)p->trapframe);
@@ -697,11 +790,8 @@ yield(void)
   p->state = RUNNABLE;
 
 #ifdef SUKJOON
-  if (is_q1(p)) // Move all to q2, when the time slice has been all used up.
-    __RE_MOVE___(p, &q1, &q2);
-  // acquire(&tickslock);
-  // printf("ticks: %d\n", ticks);
-  // release(&tickslock);
+  if (is_q2(p)) __RE_MOVE___(p, &q2, &q1);
+  if (is_q0(p)) __RE_MOVE___(p, &q0, &q1);
 #endif
 
   sched();
