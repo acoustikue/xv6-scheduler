@@ -34,6 +34,13 @@ _queue q2;
 _queue q1;
 _queue q0;
 
+extern uint ticks;
+
+// acquire(&tickslock);
+// ticks++;
+// wakeup(&ticks);
+// release(&tickslock);
+
 #define Q2    2
 #define Q1    1
 #define Q0    0
@@ -688,6 +695,15 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+
+#ifdef SUKJOON
+  if (is_q1(p)) // Move all to q2, when the time slice has been all used up.
+    __RE_MOVE___(p, &q1, &q2);
+  // acquire(&tickslock);
+  // printf("ticks: %d\n", ticks);
+  // release(&tickslock);
+#endif
+
   sched();
   release(&p->lock);
 }
