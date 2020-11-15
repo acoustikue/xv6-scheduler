@@ -21,8 +21,15 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+// EEE3535 Operating System
+// Assignment #4 Scheduling
+// Author: SukJoon Oh, 2018142216, acoustikue@yonsei.ac.kr
 #ifdef SUKJOON
 
+// Before compilation, make sure SUKJOON is defined. 
+// Or it will only compile the original source.
+
+// Get queues ready.
 _queue q2;
 _queue q1;
 _queue q0;
@@ -32,13 +39,24 @@ _queue q0;
 #define Q0    0
 #define UD    -1
 
+#define __PAUSE__   panic("(debug) PAUSE");
+
+#define __CONTEXT_SWITCH__(C, P) \
+  do { P->state = RUNNING; C->proc = P; swtch(&C->context, &P->context); C->proc = 0; } while(0)
+#define __DE_MOVE___(P, SRC, DST)   do { dequeue(SRC); enqueue(DST, P); } while(0)
+#define __RE_MOVE___(P, SRC, DST)   do { enqueue(DST, remove(SRC, P)); } while(0)
+
+
+// Make it all zeros.
 void init_queue(_queue* q, int id) { q->q_id = id; q->q_head = 0; q->q_tail = 0; q->q_cnt = 0; };
 
+// Console debug purpose.
 void show_queue_status() {
   printf("Q2 status check: %d, %d, %p, %p\n", !is_empty(&q2), get_cnt(&q2), get_head(&q2), get_tail(&q2));
   printf("Q1 status check: %d, %d, %p, %p\n", !is_empty(&q1), get_cnt(&q1), get_head(&q1), get_tail(&q1));
   printf("Q0 status check: %d, %d, %p, %p\n\n", !is_empty(&q0), get_cnt(&q0), get_head(&q0), get_tail(&q0));
 }
+
 
 // Process controls
 int is_q2(struct proc* p) { return p->p_id == Q2; }
@@ -58,16 +76,10 @@ struct proc* get_tail(_queue* q) { return q->q_tail; }
 int get_cnt(_queue* q) { return q->q_cnt; }
 
 struct proc* enqueue(_queue* q, struct proc* p) {
-  // if (p->p_id == q->q_id) return 0;
   color(p, q->q_id); // color it first
   
-  if (is_empty(q)) {
-
-    ground(p);
-    q->q_head = q->q_tail = p;
-  }
+  if (is_empty(q)) { ground(p); q->q_head = q->q_tail = p; }
   else {
-
     q->q_tail->p_next = p;
 
     p->p_prev = q->q_tail;
@@ -77,13 +89,9 @@ struct proc* enqueue(_queue* q, struct proc* p) {
   }
 
   q->q_cnt++;
-
-  // printf("enqueue: \n");
-  // show_queue_status();
   
   return p;
 }
-
 
 struct proc* dequeue(_queue* q) { // printf("dequeue\n");
   struct proc* p = q->q_head;
@@ -91,24 +99,19 @@ struct proc* dequeue(_queue* q) { // printf("dequeue\n");
   if (is_empty(q)) return 0;
 
   // When single element exists
-  if (q->q_cnt == 1) { 
-    q->q_head = q->q_tail = 0;
-  }
+  if (q->q_cnt == 1) q->q_head = q->q_tail = 0;
   else {
     q->q_head = p->p_next;
     q->q_head->p_prev = 0;
   }
+
   uncolor(p); // remove color
   ground(p);
 
   q->q_cnt--;
 
-  // printf("dequeue: \n");
-  // show_queue_status();
-
   return p;
 }
-
 
 struct proc* remove(_queue* q, struct proc* tp) { 
   struct proc* np = q->q_head;
@@ -117,14 +120,13 @@ struct proc* remove(_queue* q, struct proc* tp) {
   while (np != tp && np != 0) np = np->p_next; // search for target
   
   if (np == 0) { return 0; } // not found
-  // printf("found %p\n", np);
-  // found
+
   if (q->q_cnt == 1) { q->q_head = q->q_tail = 0; }
   else {
-    if (np->p_prev != 0) { np->p_prev->p_next = np->p_next; } // not in front
-    if (np->p_next != 0) { np->p_next->p_prev = np->p_prev; } // not in rear
-    if (np == q->q_head) { q->q_head = np->p_next; }
-    if (np == q->q_tail) { q->q_tail = np->p_prev; }
+    if (np->p_prev != 0) np->p_prev->p_next = np->p_next;  // not in front
+    if (np->p_next != 0) np->p_next->p_prev = np->p_prev;  // not in rear
+    if (np == q->q_head) q->q_head = np->p_next; 
+    if (np == q->q_tail) q->q_tail = np->p_prev; 
   }
 
   uncolor(np);
@@ -132,44 +134,36 @@ struct proc* remove(_queue* q, struct proc* tp) {
 
   q->q_cnt--;
 
-  // printf("remove: \n");
-  // show_queue_status();
-
   return np;
 }
 
-// Debug purpose
 
+
+//
 // New scheduler
 void mlfq_like() {
-
   struct proc *p;
   struct cpu *c = mycpu();
   
   c->proc = 0;
 
   for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
+    
+    intr_on(); // Avoid deadlock by ensuring that devices can interrupt.
 
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if (  p == get_head(&q2)   ) { //printf("q2 %p\n", p);
-        if(p->state == RUNNABLE) { p->state = RUNNING; c->proc = p;  swtch(&c->context, &p->context); c->proc = 0; dequeue(&q2); enqueue(&q1, p); }
-        else if (p->state == SLEEPING) { dequeue(&q2); enqueue(&q0, p); }
+      if (  p == get_head(&q2)   ) {
+        if(p->state == RUNNABLE) { __CONTEXT_SWITCH__(c, p); __DE_MOVE___(p, &q2, &q1); }
+        else if (p->state == SLEEPING) { __DE_MOVE___(p, &q2, &q0); }
         else if (p->state == UNUSED || p->state == ZOMBIE) { dequeue(&q2); } 
-        //printf("q2 %p\n", p);
-        // show_queue_status();
       }
-      else if (  p == get_head(&q1)   ) { //  printf("q1 %p\n", p);
-        if(p->state == RUNNABLE) { p->state = RUNNING; c->proc = p;  swtch(&c->context, &p->context); c->proc = 0; }
-        else if (p->state == SLEEPING) { dequeue(&q1); enqueue(&q0, p); }
+      else if (  p == get_head(&q1)   ) {
+        if(p->state == RUNNABLE) { __CONTEXT_SWITCH__(c, p); }
+        else if (p->state == SLEEPING) { __DE_MOVE___(p, &q1, &q0); }
         else if (p->state == UNUSED || p->state == ZOMBIE) { dequeue(&q1); }
-        //printf("q1 %p\n", p);
-        // show_queue_status();
       }
       release(&p->lock);
-      //show_queue_status();      
     }
   }
 }
@@ -201,6 +195,7 @@ procinit(void)
   kvminithart();
 
 #ifdef SUKJOON
+  // Set all values to zeros.
   init_queue(&q2, Q2);
   init_queue(&q1, Q1);
   init_queue(&q0, Q0);
@@ -763,9 +758,9 @@ wakeup(void *chan)
     acquire(&p->lock);
     if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
-#ifdef SUKJOON
-      printf("wakeup\n");
-      if (is_q0(p)) { remove(&q0, p); enqueue(&q2, p); }
+#ifdef SUKJOON      
+      if (is_q0(p)) // Move all to q2
+        __RE_MOVE___(p, &q0, &q2);
 #endif
     }
     release(&p->lock);
@@ -782,8 +777,8 @@ wakeup1(struct proc *p)
   if(p->chan == p && p->state == SLEEPING) {
     p->state = RUNNABLE;
 #ifdef SUKJOON
-    printf("wakeup1\n");
-    if (is_q0(p)) { remove(&q0, p); enqueue(&q2, p); }
+    if (is_q0(p)) // Move to q2
+      __RE_MOVE___(p, &q0, &q2);
 #endif
   }
 }

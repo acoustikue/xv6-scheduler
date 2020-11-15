@@ -104,49 +104,61 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
+
 // EEE3535 Operating System
+// Assignment #4 Scheduling
 // Author: SukJoon Oh, 2018142216, acoustikue@yonsei.ac.kr
 #define SUKJOON
 #ifdef SUKJOON
-  int           p_id;
-  int           p_ticks;
-  struct proc*  p_prev;
-  struct proc*  p_next;
+  int           p_id;           // This p_id holds which queue it is located in.
+  int           p_ticks;        // ticks.
+  struct proc*  p_prev;         // Maybe unnecessary?
+  struct proc*  p_next;         // Move to the next element.
 #endif
 };
 
 
 #ifdef SUKJOON
 typedef struct __queue {
-  int           q_id;
-  int           q_cnt;
-  struct proc*  q_head;
-  struct proc*  q_tail;
+  int           q_id;           // Queue holds its ID. Q2 holds 2 for instance.
+  int           q_cnt;          // Element counter.
+  struct proc*  q_head;         // First element position.   
+  struct proc*  q_tail;         // Last element position.
 } _queue;
 
+// Initializes struct __queue. 
+// This function should be called when the system was on booting.
+// procinit(), for instance. Any scope in front of scheduler() function will do.
 void init_queue(_queue*, int);
 
+//
 // Process controls
-int             is_q2(struct proc*);
-int             is_q1(struct proc*);
-int             is_q0(struct proc*);
+int             is_q2(struct proc*);  // Is the element in q2?
+int             is_q1(struct proc*);  // Is the element in q1?
+int             is_q0(struct proc*);  // Is the element in q0?
 
-int             color(struct proc*, int);
-int             uncolor(struct proc*);
-int             ground(struct proc*);
+int             color(struct proc*, int); // Mark the possession.
+int             uncolor(struct proc*);    // Delete the mark.
+int             ground(struct proc*);     // Make both arms zeros.
 
+//
 // Queue controls
-int             is_empty(_queue*);
+int             is_empty(_queue*);     // zero if not empty.
 
-struct proc*    get_head(_queue*);
-struct proc*    get_tail(_queue*);
-int             get_cnt(_queue*);
+struct proc*    get_head(_queue*);     // returns __queue::q_head.
+struct proc*    get_tail(_queue*);     // returns __queue::q_tail.
+int             get_cnt(_queue*);      // returns __queue::q_cnt.
 
 struct proc*    enqueue(_queue*, struct proc*);
 struct proc*    dequeue(_queue*);
 struct proc*    remove(_queue*, struct proc*);
 
+//
 // New scheduler
+// This will substitute the conventional scheduler().
+// To make overall code structure unchanged, this function will be called in scheduler().
 void            mlfq_like(void) __attribute__((noreturn));
+// Original scheduler() does not return a thing. If any function called inside the scheduler(),
+// It is best to make it noreturn, or the compiler will warn you.
 
 #endif
