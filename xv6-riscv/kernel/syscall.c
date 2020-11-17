@@ -164,8 +164,10 @@ syscall(void)
   }
 #ifdef SUKJOON
   acquire(&p->lock);
+  if (is_q2(p)) { }
   if (is_q1(p)) { remove(&q1, p); enqueue(&q2, p); }
   if (is_q0(p)) { remove(&q0, p); enqueue(&q2, p); }
+  p->p_intr = 1; // Mark that interrupt has been occurred.
   release(&p->lock);
 #endif
 }

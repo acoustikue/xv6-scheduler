@@ -218,7 +218,8 @@ void mlfq_like() {
             if (pb == 0) pb = get_head(&q1);
           }
           else if (p->state == SLEEPING || p->state == ZOMBIE) { __RE_MOVE___(p, &q1, &q0); }
-          else if (p->state == UNUSED) { remove(&q1, p); }  
+          else if (p->state == UNUSED) { remove(&q1, p); }
+          break;
         }
         // For this operation, pb pointer exists for always pointing at the process ready to 
         // run at the next priority boost.
@@ -350,6 +351,7 @@ found:
   enqueue(&q2, p);
   p->p_ticks[Q2] = p->p_ticks[Q1] = p->p_ticks[Q0] = 0;
   p->p_stp = ticks;
+  p->p_intr = 0;
 #endif
 
   // Allocate a trapframe page.
@@ -390,6 +392,7 @@ freeproc(struct proc *p)
 
   p->p_ticks[Q2] = p->p_ticks[Q1] = p->p_ticks[Q0] = 0;
   p->p_stp = 0;
+  p->p_intr = 0;
 
   if (p->state == ZOMBIE) {
     if (is_q2(p)) remove(&q2, p);
@@ -790,8 +793,9 @@ yield(void)
   p->state = RUNNABLE;
 
 #ifdef SUKJOON
-  if (is_q2(p)) __RE_MOVE___(p, &q2, &q1);
-  if (is_q0(p)) __RE_MOVE___(p, &q0, &q1);
+  if (is_q2(p) && p->p_intr == 0) __RE_MOVE___(p, &q2, &q1);
+  //if (is_q0(p)) __RE_MOVE___(p, &q0, &q1);
+  if (p->p_intr == 1) p->p_intr = 0;
 #endif
 
   sched();

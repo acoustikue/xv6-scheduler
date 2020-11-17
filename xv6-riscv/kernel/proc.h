@@ -115,7 +115,7 @@ struct proc {
   uint          p_stp;          // tick calculation starting point
   struct proc*  p_prev;         // Maybe unnecessary?
   struct proc*  p_next;         // Move to the next element.
-
+  int           p_intr;
 #endif
 };
 
